@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labirin DFS & BFS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid #333;
+            background-color: white;
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin: 10px;
+        }
+        #dfsBtn {
+            background-color: #4CAF50; /* Hijau untuk DFS */
+        }
+        #dfsBtn:hover {
+            background-color: #45a049;
+        }
+        #bfsBtn {
+            background-color: #2196F3; /* Biru untuk BFS */
+        }
+        #bfsBtn:hover {
+            background-color: #0b7dda;
+        }
+        #resetBtn {
+            background-color: #f44336; /* Merah untuk Reset */
+        }
+        #resetBtn:hover {
+            background-color: #da190b;
+        }
+        #info {
+            margin: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>LABIRIN DFS & BFS</h1>
+    <canvas id="mazeCanvas" width="400" height="400"></canvas>
+    <br>
+    <button id="dfsBtn" onclick="solveWithDFS()"> DFS </button>
+    <button id="bfsBtn" onclick="solveWithBFS()">BFS</button>
+    <button id="resetBtn" onclick="resetMaze()">Reset</button>
+    <div id="info">Klik tombol hijau untuk DFS atau biru untuk BFS. Jalur akan berubah biru/ungu secara bertahap! DFS menemukan path pertama (mungkin panjang), BFS menemukan path terpendek. Cek console (F12) untuk debug.</div>
+
+    <script>
+        // Dapatkan elemen canvas
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        const cellSize = 40; // Ukuran setiap sel (40x40 px)
+        const rows = 10;
+        const cols = 10;
+
+        // Maze hardcoded (0: path, 1: wall, 2: start, 3: end)
+        let maze = [
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,2,0,1,0,0,0,1,0,1],
+            [1,0,0,0,0,1,0,0,0,1],
+            [1,1,1,0,1,1,0,1,0,1],
+            [1,0,0,0,0,0,0,1,0,1],
+            [1,0,1,1,1,0,0,1,0,1],
+            [1,0,0,0,1,0,1,1,0,1],
+            [1,1,0,0,0,0,0,0,0,1],
+            [1,0,0,1,1,1,1,1,3,1],
+            [1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        let visited = []; // Matriks untuk track kunjungan
+        let solutionPath = []; // Path solusi untuk animasi
+        let animationInProgress = false; // Flag untuk hindari multiple animasi
+
+        // Fungsi untuk menggambar maze (dengan opsi warna highlight berbeda untuk BFS)
+        function drawMaze(highlightPath = [], highlightColor = 'blue') {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = col * cellSize;
+                    const y = row * cellSize;
+                    const cell = maze[row][col];
+
+                    // Gambar dinding (hitam)
+                    if (cell === 1) {
+                        ctx.fillStyle = 'black';
+                        ctx.fillRect(x, y, cellSize, cellSize);
+                    } 
+                    // Gambar path (putih)
+                    else if (cell === 0 || cell === 2 || cell === 3) {
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(x, y, cellSize, cellSize);
+                    }
+                    // Gambar start (hijau)
+                    if (cell === 2) {
+                        ctx.fillStyle = 'green';
+                        ctx.fillRect(x + 5, y + 5, cellSize - 10, cellSize - 10);
+                    }
+                    // Gambar end (merah)
+                    if (cell === 3) {
+                        ctx.fillStyle = 'red';
+                        ctx.fillRect(x + 5, y + 5, cellSize - 10, cellSize - 10);
+                    }
+                    // Gambar jalur highlight (biru untuk DFS, ungu untuk BFS)
+                    if (highlightPath.some(p => p.row === row && p.col === col)) {
+                        ctx.fillStyle = highlightColor;
+                        ctx.fillRect(x + 5, y + 5, cellSize - 10, cellSize - 10);
+                    }
+
+                    // Gambar border sel
+                    ctx.strokeStyle = '#ccc';
+                    ctx.strokeRect(x, y, cellSize, cellSize);
+                }
+            }
+        }
+
+        // Cari posisi start
+        function findStart() {
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (maze[row][col] === 2) return { row, col };
+                }
+            }
+            return null;
+        }
+
+        // Cari posisi end
+        function findEnd() {
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (maze[row][col] === 3) return { row, col };
+                }
+            }
+            return null;
+        }
+
+        // DFS rekursif (tidak berubah, sudah OK)
+        function dfs(row, col, start, end, path) {
+            if (row < 0 || row >= rows || col < 0 || col >= cols || 
+                maze[row][col] === 1 || visited[row][col]) {
+                return false;
+            }
+
+            path.push({ row, col });
+            visited[row][col] = true;
+
+            if (row === end.row && col === end.col) {
+                return true;
+            }
+
+            const directions = [[-1, 0], [0, 1], [1, 0], [0, -1]];
+            for (let [dr, dc] of directions) {
+                if (dfs(row + dr, col + dc, start, end, path)) {
+                    return true;
+                }
+            }
+
+            path.pop();
+            return false;
+        }
+
+        // BFS menggunakan queue (diperbaiki dengan debug logs)
+        function bfs(start, end) {
+            console.log('Starting BFS from', start, 'to', end);
+            const queue = [{ row: start.row, col: start.col }];
+            const parent = new Map();
+            parent.set(`${start.row},${start.col}`, null);
+            visited = Array(rows).fill().map(() => Array(cols).fill(false));
+            visited[start.row][start.col] = true;
+
+            const directions = [[-1, 0], [0, 1], [1, 0], [0, -1]];
+
+            while (queue.length > 0) {
+                const current = queue.shift();
+                const key = `${current.row},${current.col}`;
+                console.log('Dequeue:', current, 'Queue size:', queue.length); // Debug: lihat progress
+
+                if (current.row === end.row && current.col === end.col) {
+                    console.log('End found! Reconstructing path...');
+                    const path = [];
+                    let pos = current;
+                    let currentKey = key; // Gunakan variabel lokal untuk key
+                    while (pos) {
+                        path.unshift({ row: pos.row, col: pos.col });
+                        const parentKey = parent.get(currentKey);
+                        if (!parentKey) break;
+                        const [pRow, pCol] = parentKey.split(',').map(Number);
+                        pos = { row: pRow, col: pCol };
+                        currentKey = parentKey;
+                    }
+                    console.log('Path found:', path);
+                    return path;
+                }
+
+                // Eksplorasi tetangga
+                for (let [dr, dc] of directions) {
+                    const newRow = current.row + dr;
+                    const newCol = current.col + dc;
+                    if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols &&
+                        maze[newRow][newCol] !== 1 && !visited[newRow][newCol]) {
+                        const newPos = { row: newRow, col: newCol };
+                        queue.push(newPos);
+                        visited[newRow][newCol] = true;
+                        parent.set(`${newRow},${newCol}`, key);
+                        console.log('Enqueue:', newPos); // Debug: lihat enqueue (bisa dihapus jika terlalu banyak)
+                    }
+                }
+            }
+            console.log('No path found in BFS!');
+            return null;
+        }
+
+        // Fungsi untuk animasi path (diperbarui dengan warna opsional)
+        function animatePath(path, delay, algorithmName, highlightColor = 'blue') {
+            if (animationInProgress) {
+                console.log('Animation already in progress, skipping');
+                return;
+            }
+            console.log('Starting animation for', algorithmName, 'with path length:', path.length);
+            animationInProgress = true;
+            let currentIndex = 0;
+            const interval = setInterval(() => {
+                if (currentIndex < path.length) {
+                    const currentPath = path.slice(0, currentIndex + 1);
+                    drawMaze(currentPath, highlightColor);
+                    currentIndex++;
+                } else {
+                    clearInterval(interval);
+                    animationInProgress = false;
+                    document.getElementById('info').innerText = `Animasi ${algorithmName} selesai! Jalur ${highlightColor} adalah solusi ${algorithmName}.`;
+                    console.log('Animation finished');
+                }
+            }, delay);
+        }
+
+        // Fungsi solve maze dengan DFS (tombol hijau)
+        function solveWithDFS() {
+            console.log('DFS button clicked');
+            if (animationInProgress) {
+                alert('Animasi sedang berjalan! Tunggu selesai.');
+                return;
+            }
+            const start = findStart();
+            const end = findEnd();
+            if (!start || !end) {
+                alert('Start atau End tidak ditemukan!');
+                return;
+            }
+
+            visited = Array(rows).fill().map(() => Array(cols).fill(false));
+            solutionPath = [];
+
+            const found = dfs(start.row, start.col, start, end, solutionPath);
+
+            if (found) {
+                console.log('DFS path found:', solutionPath);
+                drawMaze();
+                animatePath(solutionPath, 200, 'DFS', 'blue');
+            } else {
+                alert('Tidak ada solusi untuk DFS!');
+                animationInProgress = false;
+            }
+        }
+
+        // Fungsi solve maze dengan BFS (tombol biru) - dengan debug
+        function solveWithBFS() {
+            console.log('BFS button clicked');
+            if (animationInProgress) {
+                alert('Animasi sedang berjalan! Tunggu selesai.');
+                return;
+            }
+            const start = findStart();
+            const end = findEnd();
+            if (!start || !end) {
+                alert('Start atau End tidak ditemukan!');
+                return;
+            }
+            console.log('Start:', start, 'End:', end);
+
+            solutionPath = bfs(start, end);
+
+            if (solutionPath && solutionPath.length > 0) {
+                console.log('BFS path length:', solutionPath.length);
+                drawMaze();
+                animatePath(solutionPath, 300, 'BFS', 'purple'); // Ungu untuk bedakan, delay 300ms
+            } else {
+                console.log('BFS failed: path is null or empty');
+                alert('Tidak ada solusi untuk BFS! (Cek console untuk detail)');
+                animationInProgress = false;
+            }
+        }
+
+        // Reset maze
+        function resetMaze() {
+            console.log('Reset clicked');
+            solutionPath = [];
+            animationInProgress = false;
+            visited = [];
+            drawMaze();
+            document.getElementById('info').innerText = 'Klik tombol hijau untuk DFS atau biru untuk BFS. Jalur akan berubah biru/ungu secara bertahap! DFS menemukan path pertama (mungkin panjang), BFS menemukan path terpendek. Cek console (F12) untuk debug.';
+        }
+
+        // Gambar maze awal saat load
+        drawMaze();
+    </script>
+</body>
+</html>
